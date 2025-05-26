@@ -1,0 +1,67 @@
+---
+title: 'Tarea #5'
+author: "Gonzalez Reyna Mario"
+output: html_document
+---
+
+```{r, echo=FALSE, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(tidyverse)
+library(discrtr) # A companion package for the book Introduction to Discrete Choice Analysis with `R`
+library(dplyr) # A Grammar of Data Manipulation
+library(ggplot2) # Create Elegant Data Visualisations Using the Grammar of Graphics
+library(mlogit) # Multinomial Logit Models
+library(readr) # Read Rectangular Text Data
+library(gplots) # Various R Programming Tools for Plotting Data
+library(ggmosaic) # Mosaic Plots in the 'ggplot2' Framework
+library(treemapify)
+library(ggridges)
+library(ggalluvial)
+library(evd)
+library(htmlwidgets) # HTML Widgets for R
+library(kableExtra) # Construct Complex Table with kable and Pipe Syntax
+library(plotly) # Create interactive web graphics
+library(tidyr) # Tidy messy data
+#library(webshot2) # Take screenshots of web pages
+library(evd)
+```
+
+Ejercicios del Capítulo 6 <b>"Behavioral Insights from Choice Models"</b>. Considerar como referencia las notas del respectivo capítulo.
+
+1. ¿Cuál es la diferencia entre un efecto marginal y una elasticidad?
+
+Un efecto marginal representa cuánto varía una variable dependiente "y" cuando una variable independiente "X_k"se incrementa en una unidad. En contraste, la elasticidad mide cómo responde "y" ante variaciones porcentuales en "X_k".
+
+2. ¿Por qué no es apropiado calcular la elasticidad de una variable dummy?
+
+stas medidas —efectos marginales y elasticidades— no son adecuadas para variables cualitativas (también llamadas dummy), ya que no tiene sentido hablar de incrementos unitarios o porcentuales en categorías cualitativas. Por ejemplo, no es interpretable un aumento de una unidad o un 1% en la categoría "región montaña".
+
+3. Usa el Modelo 3 de este capítulo y calcula los efectos marginales y las elasticidades del costo de operación en la media de todas las variables.
+
+```{r}
+
+data("Heating")
+
+H <- Heating %>% mlogit.data(shape = "wide", choice="depvar", varying=c(3:12))
+
+model3 <- mlogit(depvar ~ ic + oc, data = Heating, shape = "wide", choice = "depvar", reflevel = "ec", varying = 3:12
+)
+
+medias <- Heating[1, ]
+
+mean_cost <- Heating %>%
+  select(starts_with("ic"), starts_with("oc")) %>%
+  summarise(across(.cols = everything(), mean))
+
+medias[3:12] <- mean_cost
+
+efectos_marginales <- effects(model3, covariate = "oc", type = "ra", data = mlogit.data(medias, shape = "wide", choice = "depvar", varying = 3:12))
+print("Efectos marginales:")
+print(efectos_marginales)
+
+elasticidades <- effects(model3, covariate = "oc", type = "rr", data = mlogit.data(medias, shape = "wide", choice = "depvar", varying = 3:12))
+print("Elasticidades:")
+print(elasticidades)
+
+```
