@@ -1,0 +1,529 @@
+---
+title: 'Tarea #4'
+author: "Gonzalez Reyna Mario"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 5  Practical Issues in the Specification and Estimation of Discrete Choice Models
+
+```{r}
+library(knitr)
+library(tidyverse)
+library(discrtr) # A companion package for the book Introduction to Discrete Choice Analysis with `R`
+library(dplyr) # A Grammar of Data Manipulation
+library(ggplot2) # Create Elegant Data Visualisations Using the Grammar of Graphics
+library(mlogit) # Multinomial Logit Models
+library(readr) # Read Rectangular Text Data
+#library(stargazer) # Well-Formatted Regression and Summary Statistics Tables
+library(gplots) # Various R Programming Tools for Plotting Data
+library(ggmosaic) # Mosaic Plots in the 'ggplot2' Framework
+library(treemapify)
+library(ggridges)
+library(ggalluvial)
+library(evd)
+library(htmlwidgets) # HTML Widgets for R
+library(kableExtra) # Construct Complex Table with kable and Pipe Syntax
+library(plotly) # Create interactive web graphics
+library(tidyr) # Tidy messy data
+#library(webshot2) # Take screenshots of web pages
+```
+
+
+Funciones de utilidad
+
+```{r}
+data("mc_commute_wide", package = "discrtr")
+mc_commute_wide[1:6, 1:10]
+```
+
+Se toma a continuacion choice como columna y tiempo las variables que se pueden elegir
+
+```{r}
+example_wide <- mc_commute_wide %>% dplyr::select(id, choice, starts_with("time")) |> 
+                filter(id %in% c(566910139, 566873140, 566872636))
+example_wide
+```
+
+Usaremos la misma selección de variables y filas para ver la diferencia con una tabla en formato por longitud.
+
+```{r}
+example_wide |>  pivot_longer(cols = starts_with("time."), names_prefix = "time.", names_to="alternative", values_to="time")
+```
+
+Nótese como el mismo id se repite en cuatro filas, pero el tiempo está dado en una sola. El package mlogit utiliza tablas en formato por longitud. Dado que las tablas en formato por amplitud son más comunes, este package incluye una función para cambiar la tabla. Para ello es necesario indicar cuáles son las variables que varían en cada alternativa, en este caso son cuatro variables: time, access (el tiempo necesario para llegar a una parada de autobús), wait (tiempo de espera por un autobús) y transfer (el número de transferencias cuando se utiliza el autobús). Las últimas tres variables son específicas de HSR (cuando se utiliza el transporte público)
+
+```{r}
+example_long <- mc_commute_wide %>% filter(id %in% c(566910139, 566873140, 566872636)) |> 
+                mlogit.data(shape="wide", choice="choice", varying=3:22)
+
+example_long
+```
+
+```{r}
+data.frame(example_long) |>  dplyr::select(id, choice, alt, starts_with("time"), idx)
+```
+
+Dado que hay cuatro alternativas, cada fila corresponde a la situación de elección para una alternativa para un individuo (las tablas en formato por longitud por lo general tienen 
+ filas por cada decisor). El conjunto de índices contiene dos variables, la primera identifica al individuo y la segunda la alternativa:
+ 
+```{r}
+data.frame(example_long$idx)
+```
+ 
+En este caso las variables disponibles para el análisis son:
+
+ 
+```{r}
+colnames(example_long)
+```
+ 
+ Iniciaremos definiendo una fórmula que sólo considera el tiempo de transporte.
+ 
+```{r}
+# Function `mFormula()` is used to define multi-part formulas of the form:
+# y ~ x | z | w, which in the notation used for the anatomy of utility functions is
+# choice ~ alternative vars. with generic coefficients |
+# individual vars. with specific coefficients |
+# alternative vars. with specific coefficients
+# In this formula time is one of x variables
+f1 <- mFormula(choice ~ time)
+```
+ 
+La función model.matrix puede ser usada para examinar cómo la fórmula es aplicada a los datos:
+
+```{r}
+f1 |> model.matrix(example_long)
+```
+
+Definamos una fórmula con una variable específica de cada individuo 
+
+```{r}
+# Function `mFormula()` is used to define multi-part formulas of the form:
+# y ~ x | z | w, which in the notation used for the anatomy of utility functions is
+# choice ~ alternative vars. with generic coefficients |
+# individual vars. with specific coefficients |
+# alternative vars. with specific coefficients
+# In this formula `time` is one of x variables and `sidewalk_density` is one of z variables
+f2 <- mFormula(choice ~ time | sidewalk_density)
+
+```
+La matriz del modelo está dada por el tiempo que se toma usar lod diferentes medios de transporte:
+
+```{r}
+f2 |>  model.matrix(example_long)
+
+```
+
+Ahora consideramos que el tiempo es específico de cada alternativa, en lugar de tener coeficientes genéricos, por medio de la fórmula:
+
+```{r}
+f3 <- mFormula(choice ~ 0 | sidewalk_density | time)
+
+```
+Nótese que, dado que no definimos variables específicas de cada alternativa con coeficientes genéricos, tenemos que establecerlas como cero. La matriz del modelo es:
+```{r}
+f3 %>% model.matrix(example_long)
+```
+
+Experimento 1 Consiste en que los valores mu y beta son iguales
+
+```{r}
+ts <- tibble(Individual=1:6, Choice=c("A","A", "B", "A", "B", "B"),
+             yA=c(1,1,0,1,0,0), yB=c(0, 0, 1, 0, 1, 1),
+             xA=c(5,2,5,1,4,3), xB=c(4, 5, 2, 6, 1, 4))
+
+
+# Set the parameters:
+mu <- 0
+beta <- 0
+
+my_prob <- function(xA, xB){
+exp(beta * xA)/(exp(beta * xA) + exp(mu + beta * xB))  
+}
+
+# Calculate probabilities. Notice that these are the logit probabilities
+# Individual 1
+P1A <- my_prob(ts$xA[1], ts$xB[1])
+P1B <- 1 - P1A
+
+# Individual 2
+P2A <- my_prob(ts$xA[2], ts$xB[2])
+P2B <- 1 - P2A
+
+# Individual 3
+P3A <- my_prob(ts$xA[3], ts$xB[3])
+P3B <- 1 - P3A
+
+# Individual 4
+P4A <- my_prob(ts$xA[4], ts$xB[4])
+P4B <- 1 - P4A
+
+# Individual 5
+P5A <- my_prob(ts$xA[5], ts$xB[5])
+P5B <- 1 - P5A
+
+# Individual 6
+P6A <- my_prob(ts$xA[6], ts$xB[6])
+P6B <- 1 - P6A
+
+# Calculate likelihood function as the product of all the probabilities
+# Each probability is raised to ynj
+L <- P1A^ts$yA[1] * P1B^ts$yB[1] *
+P2A^ts$yA[2] * P2B^ts$yB[2] *
+P3A^ts$yA[3] * P3B^ts$yB[3] *
+P4A^ts$yA[4] * P4B^ts$yB[4] *
+P5A^ts$yA[5] * P5B^ts$yB[5] *
+P6A^ts$yA[6] * P6B^ts$yB[6]
+
+# Create data frame to tabulate results:
+df_experiment_1 <- data.frame(Individual = c(1, 2, 3, 4, 5, 6),
+Choice = c("A", "A", "B", "A", "B", "B"),
+PA = c(P1A, P2A, P3A, P4A, P5A, P6A),
+PB = c(P1B, P2B, P3B, P4B, P5B, P6B))
+# Display table
+kable(df_experiment_1, "html", digits = 4, booktabs = TRUE, align = c("c", "c", "c", "c")) %>%
+kable_styling(bootstrap_options = c("striped", "hover")) %>%
+footnote(general = paste("The value of the likelihood function in Example 1 is: ",
+round(L, digits = 4)))
+```
+
+Experimento 2 1 Consiste en que los valores mu y beta son diferentes
+
+```{r}
+# Set the parameters:
+mu <- 0.5
+beta <- -0.5
+
+my_prob <- function(xA, xB){
+exp(beta * xA)/(exp(beta * xA) + exp(mu + beta * xB))  
+}
+
+# Calculate probabilities. Notice that these are the logit probabilities
+# Individual 1
+P1A <- my_prob(ts$xA[1], ts$xB[1])
+P1B <- 1 - P1A
+
+# Individual 2
+P2A <- my_prob(ts$xA[2], ts$xB[2])
+P2B <- 1 - P2A
+
+# Individual 3
+P3A <- my_prob(ts$xA[3], ts$xB[3])
+P3B <- 1 - P3A
+
+# Individual 4
+P4A <- my_prob(ts$xA[4], ts$xB[4])
+P4B <- 1 - P4A
+
+# Individual 5
+P5A <- my_prob(ts$xA[5], ts$xB[5])
+P5B <- 1 - P5A
+
+# Individual 6
+P6A <- my_prob(ts$xA[6], ts$xB[6])
+P6B <- 1 - P6A
+
+# Calculate likelihood function as the product of all the probabilities
+# Each probability is raised to ynj
+L <- P1A^ts$yA[1] * P1B^ts$yB[1] *
+P2A^ts$yA[2] * P2B^ts$yB[2] *
+P3A^ts$yA[3] * P3B^ts$yB[3] *
+P4A^ts$yA[4] * P4B^ts$yB[4] *
+P5A^ts$yA[5] * P5B^ts$yB[5] *
+P6A^ts$yA[6] * P6B^ts$yB[6]
+
+# Create data frame to tabulate results:
+df_experiment_2 <- data.frame(Individual = c(1, 2, 3, 4, 5, 6),
+Choice = c("A", "A", "B", "A", "B", "B"),
+PA = c(P1A, P2A, P3A, P4A, P5A, P6A),
+PB = c(P1B, P2B, P3B, P4B, P5B, P6B))
+# Display table
+kable(df_experiment_2, "html", digits = 4, booktabs = TRUE, align = c("c", "c", "c", "c")) %>%
+kable_styling(bootstrap_options = c("striped", "hover")) %>%
+footnote(general = paste("The value of the likelihood function in Example 2 is: ",
+round(L, digits = 4)))
+
+```
+
+Al cambiar los valores provoca que cambien las probabilidades
+
+```{r}
+# Create a grid to plot the likelihood function
+mu = seq(from = -1, to = 1, by = 0.01)
+beta = seq(from = -2, to = 0, by = 0.01)
+coeffs <- expand.grid(mu, beta)
+
+my_prob <- function(xA, xB, mu, beta){
+exp(beta * xA)/(exp(beta * xA) + exp(mu + beta * xB))  
+}
+
+
+ts <- data.frame(Individual = c(1, 2, 3, 4, 5, 6),
+       Choice = c("A", "A", "B", "A", "B", "B"),
+       yA = c(1, 1, 0, 1, 0, 0),
+       yB = c(0, 0, 1, 0, 1, 1),
+       xA = c(5, 2, 5, 1, 4, 3),
+       xB = c(4, 5, 2, 6, 1, 4))
+
+
+# Define the likelihood function
+lkh <- function(mu = 0, beta = 0){
+       
+       P1A <- my_prob(ts$xA[1], ts$xB[1], mu, beta)
+       P1B <- 1 - P1A
+
+       P2A <- my_prob(ts$xA[2], ts$xB[2], mu, beta)
+       P2B <- 1 - P2A
+
+       P3A <- my_prob(ts$xA[3], ts$xB[3], mu, beta)
+       P3B <- 1 - P3A
+
+       P4A <- my_prob(ts$xA[4], ts$xB[4], mu, beta)
+       P4B <- 1 - P4A
+
+       P5A <- my_prob(ts$xA[5], ts$xB[5], mu, beta)
+       P5B <- 1 - P5A
+
+       P6A <- my_prob(ts$xA[6], ts$xB[6], mu, beta)
+       P6B <- 1 - P6A
+
+       P1A^ts$yA[1] * P1B^ts$yB[1] *
+       P2A^ts$yA[2] * P2B^ts$yB[2] *
+       P3A^ts$yA[3] * P3B^ts$yB[3] *
+       P4A^ts$yA[4] * P4B^ts$yB[4] *
+       P5A^ts$yA[5] * P5B^ts$yB[5] *
+       P6A^ts$yA[6] * P6B^ts$yB[6]
+}
+
+# Evaluate the likelihood function on the grid
+L <- lkh(mu = coeffs$Var1, beta = coeffs$Var2)
+L <- data.frame(mu = coeffs$Var1, beta = coeffs$Var2, L)
+L <- xtabs(L ~ beta + mu, L) %>% # Convert to cross-tabulation matrix
+unclass() # Drop the xtabs class (plotly does not like it)
+
+likelihood_plot <- plot_ly(z = ~L, x = ~mu, y = ~beta) %>%
+add_surface() %>%
+layout(scene = list(
+xaxis = list(title = "x-axis (mu)"),
+yaxis = list(title = "y-axis (beta)"),
+zaxis = list(title = "z-axis (L)")))
+
+likelihood_plot
+```
+
+En la gráfica se puede observar que los valores aproximados que maximizan la función de verosimilitud son mu = 0.10 y bet = 0.65. Si utilizamos estos coeficientes para calcular las probabilidades, podemos comparar las probabilidades de los experimentos 1 y 2:
+
+```{r}
+# Set the parameters:
+mu <- 0.1
+beta <- -0.65
+
+my_prob <- function(xA, xB){
+exp(beta * xA)/(exp(beta * xA) + exp(mu + beta * xB))  
+}
+
+# Calculate probabilities. Notice that these are the logit probabilities
+# Individual 1
+P1A <- my_prob(ts$xA[1], ts$xB[1])
+P1B <- 1 - P1A
+
+# Individual 2
+P2A <- my_prob(ts$xA[2], ts$xB[2])
+P2B <- 1 - P2A
+
+# Individual 3
+P3A <- my_prob(ts$xA[3], ts$xB[3])
+P3B <- 1 - P3A
+
+# Individual 4
+P4A <- my_prob(ts$xA[4], ts$xB[4])
+P4B <- 1 - P4A
+
+# Individual 5
+P5A <- my_prob(ts$xA[5], ts$xB[5])
+P5B <- 1 - P5A
+
+# Individual 6
+P6A <- my_prob(ts$xA[6], ts$xB[6])
+P6B <- 1 - P6A
+
+# Calculate likelihood function as the product of all the probabilities
+# Each probability is raised to ynj
+L <- P1A^ts$yA[1] * P1B^ts$yB[1] *
+P2A^ts$yA[2] * P2B^ts$yB[2] *
+P3A^ts$yA[3] * P3B^ts$yB[3] *
+P4A^ts$yA[4] * P4B^ts$yB[4] *
+P5A^ts$yA[5] * P5B^ts$yB[5] *
+P6A^ts$yA[6] * P6B^ts$yB[6]
+
+# Create data frame to tabulate results:
+df_approx_solution <- data.frame(Individual = c(1, 2, 3, 4, 5, 6),
+Choice = c("A", "A", "B", "A", "B", "B"),
+PA = c(P1A, P2A, P3A, P4A, P5A, P6A),
+PB = c(P1B, P2B, P3B, P4B, P5B, P6B))
+
+# Join tables for displaying results
+df <- df_experiment_1 %>% left_join(df_experiment_2,
+      by = c("Individual", "Choice")) %>%
+      left_join(df_approx_solution, 
+      by = c("Individual", "Choice"))
+
+
+
+# Display table
+kable(df,"html", digits = 4, booktabs = TRUE, col.names = c("Individual", "Choice", "PA", "PB", "PA", "PB", "PA", "PB"),
+      align = c("l", "c", "c", "c", "c", "c", "c", "c")) %>%
+      kable_styling(latex_options = c("striped")) %>%
+      add_header_above(c(" " = 1, " " = 1,
+      "Experiment 1" = 2,
+      "Experiment 2" = 2,
+      "Approx Max Likelihood" = 2))%>%
+footnote(general = paste("The approximate optimal value of the likelihood function is: ",
+round(L, digits = 4)))
+
+```
+
+Dado que la función de verosimilitud toma valores entre 0 
+y 1,la función log-likelihood toma valores menores que cero.
+
+## modelo logit
+
+Consideraremos nuevamente el modelo para elección de modo de transporte. Es necesario transformar todo el conjunto de datos del formato por amplitud por longitud:
+
+```{r}
+mc_commute_long <- mc_commute_wide |> 
+mlogit.data(shape="wide",
+            # Name of column with the choices
+            choice = "choice",
+            # Numbers of columns with attributes that vary by alternative
+            varying = 3:22)
+```
+
+Esta función requiere al menos dos argumentos: una mFormula y un conjunto de datos. Podemos verificar que las fórmulas definidas previamente son objetos de este tipo:
+
+```{r}
+class(f1)
+
+```
+```{r}
+class(f2)
+```
+```{r}
+class(f3)
+```
+
+```{r}
+# Function `mlogit()` is used to estimate logit models
+# It needs a multi-part formula and a data set in long form
+model1 <- mlogit(f1, mc_commute_long)
+# Function `summary()` give the summary of data objects,
+# including the output of model estimation algorithms
+summary(model1)
+```
+
+Los resultados incluyen la proporción de frecuencia observada de cada alternativa además de información acerca del procedimiento de optimización.
+
+Ahora se estima otro modelo usando la segunda fórmula:
+
+```{r}
+model2 <- mlogit(f2, mc_commute_long)
+
+summary(model2)
+```
+
+Es posible seleccionar el nivel de referencia para las utilidades cuando se estima el modelo, en el siguiente ejemplo se utiliza la alternativa “walk” como referencia:
+
+```{r}
+model2 <- mlogit(f2, mc_commute_long, reflevel = "Walk")
+
+summary(model2)
+```
+Observemos que ahora dos coeficientes de sidewalk son significativos. Mientras la densidad de acera no cambia significativamente la utilidad entre utilizar bicicleta o caminar, vivir en un lugar con alta densidad de aceras reduce la utilidad de usar automóvil y transporte público respecto a caminar.
+
+```{r}
+summary(mc_commute_long$sidewalk_density)
+```
+Posteriormente, del conjunto de datos utilizados para estimar el modelo seleccionamos algunas observaciones para explorar las densidades de aceras en el rango entre 0 y 60, en intervalos de longitud 5. Por lo tanto, se seleccionan 52 observaciones (filas) de la tabla (trece niveles de densidad de aceras por cuatro alternativas):
+
+```{r}
+mc_commute_predict <- mc_commute_long[1:52, ]
+```
+
+Reemplazamos la variable sidewalk density usando valores entre 0 y 60, en intervalos de longitud 5. Dado que cada alternativa es una fila, es necesario crear una sucesión de valores repetidos de la siguiente manera:
+
+```{r}
+mc_commute_predict$sidewalk_density <- rep(seq(from=0, to=60, by=5), each=4)
+```
+Podemos examinar los valores asignados para sidewalk density
+```{r}
+mc_commute_predict |>  data.frame() |>  select(sidewalk_density) |>  slice_head(n=10)
+```
+El conjunto de datos para predicción ahora incluye el rango de valores de sidewalk density en los cuales se tiene interés. El objetivo de la simulación es calcular la probabilidad de escoger alguna de las opciones de transporte conforme la densidad de acera varía, para ello también es necesario fijar los valores de otras variables, en particular se fija el valor del tiempo (se considera la mediana):
+
+```{r}
+median(mc_commute_predict$time, na.rm=TRUE)
+```
+```{r}
+mc_commute_predict$time <- 10
+```
+
+Ahora se calculan las probabilidades por medio de la función predict y el modelo 2:
+
+```{r}
+probs <- predict(model2, newdata=mc_commute_predict)
+```
+
+El resultado (value) de predict es una matriz que contiene las probabilidades para trece niveles de densidad de acera y cuatro alternativas de transporte:
+
+```{r}
+print(probs)
+
+```
+
+Para facilitar el procedimiento al realizar la gráfica, se agregan los valores de la densidad de acera y se cambia la forma de la tabla (por longitud), de tal manera que cada fila sea la probabilidad de la combinación algún modo de transporte y densidad de acera:
+
+```{r}
+probs <- data.frame(sidewalk_density=seq(from=0, to=60, by=5), probs) %>% 
+                    pivot_longer(cols=-sidewalk_density,
+                                 names_to="Mode",
+                                 values_to = "Probability")
+
+probs %>% slice_head(n=10)
+
+```
+
+Ahora podemos generar la gráfica
+
+```{r}
+ggplot(probs)+
+  geom_line(aes(x=sidewalk_density, y=Probability, color=Mode), linewidth=1.2)+
+  labs(x= expression("Sidewalk density (km/km"^2*")"),  y="Probability")
+
+```
+
+es denominado el modelo “Market Shares”:
+
+```{r}
+f0 <- mFormula(choice ~ 1)
+model0 <- mlogit(f0, mc_commute_long)
+summary(model0)
+```
+
+La verosimilitud logarítmica del modelo Market Shares es -1547.2, mientras que, para el modelo 2 es -760.418. Luego, la 
+ de McFadden para el modelo 2 es:
+ 
+```{r}
+1-as.numeric(model2$logLik)/as.numeric(model0$logLik)
+```
+ 
+En el resumen de los modelos, la prueba de proporción de verosimilitud está reportada, y se contrasta con el modelo nulo. Cuando es necesario comparar dos modelos no nulos se utiliza la función lrtest:
+
+```{r}
+lrtest(model1, model2)
+```
+
